@@ -3,6 +3,8 @@
 
 # Naomi Nota last edit 2026-11-19
 
+# GENERAL INFORMATION
+
 # Use of collections etmira and mylius: https://arche.acdh.oeaw.ac.at/crash/
 # Ontology structure: https://arche.acdh.oeaw.ac.at/browser/api/rootTable/en?_format=html
 # More information on package RDFlib: https://github.com/RDFLib/rdflib
@@ -14,11 +16,19 @@
 #
 # Need to change the file before being able to load it in RDFlib.
 
+# USAGE PYTHON SCRIPT
 
-## Read and inspect file
+# Install packages (in bash): uv add rdflib matplotlib seaborn python-dateutil
+# Then: uv run rdf2text.py input.nt output.txt [language]
+#
+# The optional language argument sets a preference for resource labels using ISO 639-1 language codes.
+# Examples: en (English), de (German), fr (French).
+# If no language is specified, the existing label selection is used.
+# If the preferred language is unavailable, the script falls back to an undefined or untagged label, or another available language.
 
-# Install packages (in bash):
-# uv add rdflib matplotlib seaborn python-dateutil
+# ----------------------------------------------------------------------------
+
+# Read and inspect file
 
 # Standard library
 import time
@@ -39,12 +49,18 @@ import seaborn as sns
 
 
 # Read command-line arguments
-if len(sys.argv) != 3:
-    print("Usage: uv run rdf2text.py input.nt output.txt")
+if len(sys.argv) not in (3, 4):
+    print("Usage: uv run rdf2text.py input.nt output.txt [language]")
     sys.exit(1)
 
 input_file = sys.argv[1]
 output_file = sys.argv[2]
+language_preference = sys.argv[3].lower() if len(sys.argv) == 4 else None
+
+# Add warning in case of invalid language code
+if language_preference and not re.fullmatch(r"[a-z]{2}", language_preference): 
+    print("Error: language must be an ISO 639-1 two-letter code, e.g. en, de or fr.")
+    sys.exit(1)
 
 # Start performance measurements
 start_time = time.perf_counter()
@@ -68,6 +84,13 @@ for line in lines:
 # Parse the cleaned file
 g = Graph()
 g.parse(data="".join(cleaned_lines), format="nt")
+
+# Inspect available languages in RDF literals
+languages = Counter(
+    obj.language
+    for obj in g.objects()
+    if isinstance(obj, Literal) and obj.language
+)
 
 print(f"Number of triples: {len(g):,}")
 
@@ -102,7 +125,11 @@ for s, p, o in g:
 
 
 # Get impression of data
-print("=== TOP 10 MOST COMMON SUBJECTS ===")
+print("\n=== AVAILABLE LANGUAGES ===")
+for language, count in languages.most_common():
+    print(f"{language}: {count}")
+
+print("\n=== TOP 10 MOST COMMON SUBJECTS ===")
 for item, count in subjects.most_common(10):
     print(f"{count:>6}  {item}")
 
@@ -205,8 +232,32 @@ def clean_text(value):
     """Clean display text without changing RDF graph."""
     return str(value).strip()
 
+def select_label(literals):
+    """Select a literal according to the preferred language."""
 
+    literals = [
+        obj for obj in literals
+        if isinstance(obj, Literal) and clean_text(obj)
+    ]
 
+    if not literals:
+        return None
+
+    if language_preference is None:
+        return literals[0]
+
+    # Prefer an exact ISO 639-1 language-code match
+    for obj in literals:
+        if (obj.language or "").lower() == language_preference:
+            return obj
+
+    # Fall back to an undefined or untagged label
+    for obj in literals:
+        if obj.language is None or obj.language.lower() == "und":
+            return obj
+
+    # Fall back to another available language
+    return literals[0]
 
 def format_friendly_date(date_str):
     """Format dates as ISO YYYY-MM-DD, preserving time and timezone."""
@@ -325,19 +376,23 @@ def _resolve_resource_label(term, depth=0, visited=None):
         "name",
     )
 
-    # Use the existing properties index instead of searching the graph
+    # Select labels according to the preferred language
     for name in preferred:
-        for obj in properties.get((term, name), []):
-            if isinstance(obj, Literal) and clean_text(obj):
-                return clean_text(obj)
+        label = select_label(properties.get((term, name), []))
+
+        if label is not None:
+            return clean_text(label)
 
     # Some graphs link to separate title or filename resources
     for name in ("hastitle", "hasalternativetitle", "hasfilename"):
-        for obj in properties.get((term, name), []):
+        values = properties.get((term, name), [])
 
-            if isinstance(obj, Literal) and clean_text(obj):
-                return clean_text(obj)
+        label = select_label(values)
 
+        if label is not None:
+            return clean_text(label)
+
+        for obj in values:
             if isinstance(obj, URIRef):
                 label = _resolve_resource_label(
                     obj, depth + 1, visited
