@@ -1,13 +1,13 @@
 
 # Tests to process RDF to text in preparation for CRASH hackaton in Graz 2026
 
-# Naomi Nota 2026-10-27
+# Naomi Nota last edit 2026-11-19
 
-# Use of collection etmira: https://arche.acdh.oeaw.ac.at/crash/
-# Ontologie structure: https://arche.acdh.oeaw.ac.at/browser/api/rootTable/en?_format=html
+# Use of collections etmira and mylius: https://arche.acdh.oeaw.ac.at/crash/
+# Ontology structure: https://arche.acdh.oeaw.ac.at/browser/api/rootTable/en?_format=html
 # More information on package RDFlib: https://github.com/RDFLib/rdflib
 
-# Etmira's .nt file contains:
+# .nt contains:
 # - URLs wrapped in Markdown
 # - RDF resources as objects represented with quoted strings such as ^^<URI> instead of N-Triples URI syntax
 # - Other datatypes like ^^<GEOM>
@@ -15,12 +15,14 @@
 # Need to change the file before being able to load it in RDFlib.
 
 
-## Read and inspect files
+## Read and inspect file
 
 # Install packages (in bash):
 # uv add rdflib matplotlib seaborn python-dateutil
 
 # Standard library
+import time
+import tracemalloc
 import re
 import sys
 from collections import Counter, defaultdict
@@ -44,6 +46,9 @@ if len(sys.argv) != 3:
 input_file = sys.argv[1]
 output_file = sys.argv[2]
 
+# Start performance measurements
+start_time = time.perf_counter()
+tracemalloc.start()
 
 # Preprocess the file to convert into N-Triples syntax
 with open(input_file, "r", encoding="utf-8") as infile:
@@ -140,7 +145,7 @@ sns.barplot(
 
 # Labeling and titles
 ax.set_title(
-    "Distribution of all predicates in ETMIRA collection",
+    "Distribution of all predicates in collection",
     fontsize=14,
     pad=15
 )
@@ -688,3 +693,15 @@ with open(output_file, "w", encoding="utf-8") as outfile:
 
 
 print(f"Exported {len(g):,} sentences to {output_file}")
+
+# Performance results
+end_time = time.perf_counter()
+current_memory, peak_memory = tracemalloc.get_traced_memory()
+tracemalloc.stop()
+
+execution_time = end_time - start_time
+
+print("\n=== PERFORMANCE RESULTS ===")
+print(f"Execution time: {execution_time:.2f} seconds")
+print(f"Current memory usage: {current_memory:,} bytes")
+print(f"Peak memory usage: {peak_memory:,} bytes")
